@@ -2,10 +2,120 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Stargazers log</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1f2328;
+        --muted: #59636e;
+        --border: #d1d9e0;
+        --link: #0969da;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --fg: #f0f6fc;
+          --muted: #9198a1;
+          --border: #3d444d;
+          --link: #4493f8;
+        }
+      }
+      body {
+        margin: 0 auto;
+        max-width: 760px;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      a { color: var(--link); }
+      #status { color: var(--muted); }
+      #repos { list-style: none; padding: 0; margin: 0; }
+      .repo { border-top: 1px solid var(--border); padding: 16px 0; }
+      .repo-name { font-weight: 600; font-size: 1.05rem; word-break: break-word; }
+      .repo-desc { margin: 4px 0 8px; }
+      .repo-meta { color: var(--muted); font-size: 0.875rem; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+    </style>
   </head>
   <body>
     <h1>Stargazers log</h1>
     <p>A log of the repositories I've starred.</p>
+    <p id="status" role="status">Loading starred repositories…</p>
+    <ul id="repos"></ul>
+
+    <script>
+      const USERNAME = "Tspin25";
+      const PER_PAGE = 100;
+      const MAX_PAGES = 10;
+
+      const statusEl = document.getElementById("status");
+      const listEl = document.getElementById("repos");
+
+      // Follows GitHub's Link header for pagination, up to MAX_PAGES.
+      async function fetchStarred() {
+        let url = `https://api.github.com/users/${USERNAME}/starred?per_page=${PER_PAGE}&sort=created&direction=desc`;
+        const items = [];
+        for (let page = 0; url && page < MAX_PAGES; page++) {
+          const res = await fetch(url, {
+            headers: { Accept: "application/vnd.github.star+json" },
+          });
+          if (!res.ok) {
+            if (res.status === 403 || res.status === 429) {
+              throw new Error("GitHub's rate limit was reached. Try again in a few minutes.");
+            }
+            throw new Error(`GitHub returned an error (${res.status}).`);
+          }
+          items.push(...(await res.json()));
+          const next = (res.headers.get("Link") || "").match(/<([^>]+)>;\s*rel="next"/);
+          url = next ? next[1] : null;
+        }
+        return items;
+      }
+
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      function renderRepo({ starred_at, repo }) {
+        const li = el("li", "repo");
+
+        const name = el("div", "repo-name");
+        const link = el("a", null, repo.full_name);
+        link.href = repo.html_url;
+        name.append(link);
+        li.append(name);
+
+        if (repo.description) li.append(el("p", "repo-desc", repo.description));
+
+        const meta = el("div", "repo-meta");
+        if (repo.language) meta.append(el("span", null, repo.language));
+        meta.append(el("span", null, `★ ${repo.stargazers_count.toLocaleString()}`));
+        if (starred_at) {
+          const date = new Date(starred_at).toLocaleDateString(undefined, {
+            year: "numeric", month: "short", day: "numeric",
+          });
+          meta.append(el("span", null, `Starred ${date}`));
+        }
+        li.append(meta);
+        return li;
+      }
+
+      fetchStarred()
+        .then((items) => {
+          if (items.length === 0) {
+            statusEl.textContent = "No starred repositories yet.";
+            return;
+          }
+          statusEl.textContent = `${items.length} starred ${items.length === 1 ? "repository" : "repositories"}, newest first.`;
+          listEl.append(...items.map(renderRepo));
+        })
+        .catch((err) => {
+          statusEl.textContent = `Couldn't load starred repositories. ${err.message}`;
+        });
+    </script>
   </body>
 </html>
